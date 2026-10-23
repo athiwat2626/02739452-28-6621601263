@@ -1,0 +1,21 @@
+# ไลบรารี Python ทั้งหมดของโปรเจกต์ (ห้ามใช้ Selenium / Playwright / Scrapy)
+# ติดตั้งในเครื่องตัวเองได้ด้วย: pip install -r requirements.txt
+# ตอนรันด้วย Docker แต่ละอิมเมจใช้ไฟล์ของตัวเอง:
+#   - airflow/requirements.txt  (ติดตั้งเพิ่มบน apache/airflow:2.10.5)
+#   - web/requirements.txt      (แดชบอร์ด Streamlit)
+
+# --- ดึงข้อมูล / Web scraping ---
+requests
+beautifulsoup4
+lxml
+
+# --- ฐานข้อมูล PostgreSQL ---
+psycopg2-binary==2.9.10
+apache-airflow-providers-postgres
+
+# --- ประมวลผลข้อมูล ---
+pandas==2.2.3
+
+# --- แดชบอร์ด ---
+streamlit==1.40.2
+plotly==5.24.1

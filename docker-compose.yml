@@ -98,7 +98,7 @@ services:
 
   # แดชบอร์ด Streamlit อ่านข้อมูลจาก animedb โดยตรง
   dashboard:
-    build: ./dashboard
+    build: ./web
     environment:
       DB_HOST: animedb
       DB_PORT: 5432
@@ -108,7 +108,7 @@ services:
     ports:
       - "${DASHBOARD_HOST_PORT:-8501}:8501"
     volumes:
-      - ./dashboard:/app
+      - ./web:/app
     depends_on:
       animedb:
         condition: service_healthy

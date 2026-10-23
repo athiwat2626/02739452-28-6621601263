@@ -1,23 +1,34 @@
 # 📊 Anime Score Comparison Pipeline
 
-โปรเจกต์ Data Engineering สำหรับนักศึกษา: เก็บอนิเมะยอดนิยม Top ~200 เรื่องจาก **3 เว็บไซต์**
-(MyAnimeList, AniList, Kitsu) → รวมเป็นชุดข้อมูลเดียวด้วย **Apache Airflow** → เก็บใน **PostgreSQL**
-→ แสดงผลบน **Streamlit Dashboard**
+## หัวข้อโปรเจกต์
 
-| แหล่งข้อมูล | วิธีเก็บ | จำนวน |
-|---|---|---|
-| MyAnimeList | Web scraping (requests + BeautifulSoup) หน้า `topanime.php` | 4 หน้า × 50 |
-| AniList | GraphQL API `https://graphql.anilist.co` | 4 หน้า × 50 |
-| Kitsu | REST API `https://kitsu.app/api/edge/anime` | 10 หน้า × 20 |
+**ระบบเปรียบเทียบคะแนนอนิเมะจากหลายเว็บไซต์** — เว็บรีวิวอนิเมะแต่ละเว็บให้คะแนนเรื่องเดียวกันไม่เท่ากัน
+โปรเจกต์ Data Engineering นี้เก็บอนิเมะยอดนิยม Top ~200 เรื่องจาก **3 เว็บไซต์** มารวมเป็นชุดข้อมูลเดียว
+เพื่อดูว่าเรื่องไหนแต่ละเว็บให้คะแนนต่างกันมากที่สุด และคะแนนเปลี่ยนแปลงอย่างไรตามเวลา
+
+ขั้นตอน: ดึงข้อมูล → รวมเป็นชุดข้อมูลเดียวด้วย **Apache Airflow** → เก็บใน **PostgreSQL**
+→ แสดงผลบน **เว็บแดชบอร์ด Streamlit**
+
+## แหล่งข้อมูล
+
+| แหล่งข้อมูล | วิธีเก็บ | ข้อมูลที่ใช้ | จำนวน |
+|---|---|---|---|
+| [MyAnimeList](https://myanimelist.net/topanime.php) | Web scraping (requests + BeautifulSoup) หน้า `topanime.php` | MAL ID, ชื่อ, อันดับ, คะแนน, ประเภท, จำนวนตอน, ปีที่ฉาย, จำนวนสมาชิก | 4 หน้า × 50 |
+| [AniList](https://anilist.co) | GraphQL API `https://graphql.anilist.co` | ID, MAL ID, ชื่อ, คะแนนเฉลี่ย (0–100), ความนิยม, ประเภท, จำนวนตอน, แนวเรื่อง, ปี, สถานะ | 4 หน้า × 50 |
+| [Kitsu](https://kitsu.app) | REST API `https://kitsu.app/api/edge/anime` | ID, MAL ID (จาก mappings), ชื่อ, คะแนนเฉลี่ย (0–100), จำนวนผู้ใช้, ประเภท, จำนวนตอน, วันเริ่มฉาย, สถานะ | 10 หน้า × 20 |
+
+ไม่มี API key ใด ๆ เพราะทั้ง 3 แหล่งเปิดให้อ่านข้อมูลสาธารณะได้โดยไม่ต้องลงทะเบียน
 
 ---
 
 ## 1. วิธีติดตั้งและรัน
 
 ต้องมี **Docker Desktop** (มี Docker Compose v2) เท่านั้น ไม่ต้องลง Python ในเครื่อง
+(ถ้าต้องการรันโค้ดนอก Docker ติดตั้งไลบรารีได้ด้วย `pip install -r requirements.txt`)
 
 ```bash
-# 1) สร้างไฟล์ .env จากตัวอย่าง (แก้รหัสผ่านได้ตามต้องการ)
+# 1) สร้างไฟล์ .env จากตัวอย่าง แล้วเปิดแก้ค่า change_me_* ทุกตัวเป็นรหัสผ่านของตัวเอง
+#    (.env อยู่ใน .gitignore จะไม่ถูก commit ขึ้น git)
 cp .env.example .env
 
 # 2) build และเปิดทุกบริการ (ครั้งแรกใช้เวลาหลายนาที)
@@ -29,8 +40,8 @@ docker compose ps
 
 | บริการ | URL / พอร์ต | หมายเหตุ |
 |---|---|---|
-| Airflow UI | http://localhost:8080 | ผู้ใช้/รหัสผ่านตาม `.env` (ค่าเริ่มต้น `admin` / `admin`) |
-| Dashboard | http://localhost:8501 | Streamlit |
+| Airflow UI | http://localhost:8080 | ผู้ใช้ `AIRFLOW_ADMIN_USER` / รหัสผ่าน `AIRFLOW_ADMIN_PASSWORD` ที่ตั้งใน `.env` |
+| เว็บแดชบอร์ด | http://localhost:8501 | Streamlit (โค้ดในโฟลเดอร์ `web/`) |
 | animedb (Postgres 16) | `localhost:5433` | ต่อด้วย DBeaver / psql ได้ |
 
 > ถ้าพอร์ตชนกับโปรแกรมอื่น ให้แก้ `AIRFLOW_HOST_PORT`, `DASHBOARD_HOST_PORT`, `ANIMEDB_HOST_PORT` ใน `.env`
@@ -104,6 +115,7 @@ flowchart LR
 ```
 anime-pipeline/
 ├── docker-compose.yml        # Airflow + Postgres x2 + Streamlit
+├── requirements.txt          # รายการไลบรารี Python ทั้งหมดของโปรเจกต์
 ├── .env.example              # ตัวอย่างค่าลับ/ค่าตั้ง (คัดลอกเป็น .env)
 ├── airflow/
 │   ├── Dockerfile            # apache/airflow:2.10.5 + ไลบรารีเพิ่ม
@@ -115,7 +127,7 @@ anime-pipeline/
 │       ├── extract.py        # ดึงข้อมูล 3 เว็บ
 │       ├── transform.py      # แปลงสคีมา, DQ check, merge/dedup
 │       └── db.py             # UPSERT / log / merge ลง Postgres
-└── dashboard/
+└── web/                      # เว็บแดชบอร์ด Streamlit
     ├── app.py                # จุดเริ่มต้น + เมนูหน้า
     ├── overview.py           # หน้า 1: ภาพรวมคะแนน
     ├── pipeline_status.py    # หน้า 2: สถานะ Pipeline
@@ -158,7 +170,7 @@ anime-pipeline/
 | | บันทึกการรันราย source | `db.log_run()` / `db.set_rows_loaded()` → ตาราง `pipeline_runs` (แสดงในหน้า "สถานะ Pipeline") |
 | | DB connection ผ่าน Airflow Connection + secrets ใน `.env` | `AIRFLOW_CONN_ANIMEDB` ใน `docker-compose.yml`, `PostgresHook("animedb")` ใน `db.py`, `.env.example` |
 | | จำลองเว็บล่ม | `BREAK_SOURCE` → `extract.check_break()` |
-| | Dashboard | `dashboard/overview.py`, `dashboard/pipeline_status.py` |
+| | Dashboard | `web/overview.py`, `web/pipeline_status.py` |
 
 ### กฎ Data Quality (`transform.check_row`)
 
@@ -324,7 +336,7 @@ docker compose exec animedb psql -U anime -d animedb -c \
 
 **วิธีแก้**
 - ใช้ชื่อคอลัมน์ภาษาอังกฤษภายในโค้ด (`mean_score`, `count`) แล้วแปลงเป็นภาษาไทยเฉพาะตอนแสดงผลด้วย
-  `labels={"mean_score": "คะแนนเฉลี่ย"}` ([overview.py](dashboard/overview.py))
+  `labels={"mean_score": "คะแนนเฉลี่ย"}` ([overview.py](web/overview.py))
 - ทดสอบซ้ำด้วย Streamlit `AppTest` ทั้ง 2 หน้า ไม่มี exception
 
 **บทเรียน:** ภาษาไทยใช้ได้ดีใน string และหน้าจอ แต่ไม่ควรใช้เป็นชื่อตัวแปรหรือชื่อ argument ในโค้ด Python

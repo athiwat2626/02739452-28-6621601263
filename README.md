@@ -241,6 +241,8 @@ docker compose exec airflow-scheduler airflow dags trigger anime_pipeline
 - `kitsu.extract` จะ **retry 2 ครั้ง** (สีเหลือง up_for_retry) แล้วกลายเป็น **skipped** (สีชมพู) ไม่ใช่ failed
 - `kitsu.transform` ถูก skip ตาม แต่ `validate` → `load_raw` → `merge` ยังทำงานด้วยข้อมูล MAL + AniList
 - DAG run จบด้วยสถานะ **success**
+- ทดสอบแล้วทั้ง `BREAK_SOURCE=kitsu` และ `BREAK_SOURCE=mal` — กรณี MAL ซึ่งใช้ Dynamic Task Mapping
+  ทั้ง 4 หน้า (`mal.extract [0..3]`) จะ retry ครบ 3 ครั้งแล้ว skip ทุกหน้า และ merge จาก AniList + Kitsu ต่อได้
 - ตาราง `pipeline_runs` มีแถว `kitsu | failed | จำลองเว็บ kitsu ล่ม ...` และหน้า **สถานะ Pipeline** แสดงการ์ดสีแดง
 
 ```bash
@@ -275,6 +277,13 @@ docker compose exec animedb psql -U anime -d animedb -c \
   (ห้ามเฉพาะ `/admin/`, `/comments.php`, `/clubs.php/*` ฯลฯ) โปรเจกต์นี้ดึงเฉพาะหน้า Top Anime 4 หน้าต่อวัน
   และไม่เข้าหน้าที่ถูกห้าม robots.txt ของ MAL บล็อก User-agent `Scrapy` และบอทเก็บข้อมูลฝึก AI
   ซึ่งโปรเจกต์นี้ไม่ได้ใช้และไม่ได้มีวัตถุประสงค์นั้น
+  ตรวจซ้ำด้วย `urllib.robotparser` ของ Python: User-agent ของโปรเจกต์ได้ผล `allowed=True`
+  ส่วน User-agent `Scrapy` ได้ `allowed=False`
+- **AniList**: `https://anilist.co/robots.txt` เป็น `User-agent: * / Disallow:` (อนุญาตทั้งหมด)
+  และเราใช้ GraphQL API ทางการ ไม่ได้ scrape หน้าเว็บ
+- **Kitsu**: ไฟล์ `https://kitsu.app/robots.txt` อยู่หลัง Cloudflare (ตอบ HTTP 403 ให้โปรแกรมอัตโนมัติ)
+  จึงอ่านกฎไม่ได้ แต่เราไม่ได้ scrape หน้าเว็บของ Kitsu เลย ใช้เฉพาะ JSON:API สาธารณะที่ Kitsu
+  เปิดให้ใช้และมีเอกสารทางการ (`/api/edge`) ไม่ต้องใช้ API key และดึงเพียง 10 คำขอต่อวัน
 - **ไม่ใช้ Scrapy / Selenium / Playwright / headless browser**: ใช้แค่ `requests` + `BeautifulSoup`
   และ API ทางการของ AniList / Kitsu
 - **ระบุตัวตนตรงไปตรงมา**: User-Agent `StudentProject-AnimePipeline/1.0 (educational)` ไม่ปลอมเป็นเบราว์เซอร์

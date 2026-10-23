@@ -1,0 +1,7 @@
+# ไลบรารีที่ DAG ใช้ (ห้ามใช้ Selenium / Playwright / Scrapy)
+requests
+beautifulsoup4
+lxml
+psycopg2-binary
+pandas
+apache-airflow-providers-postgres

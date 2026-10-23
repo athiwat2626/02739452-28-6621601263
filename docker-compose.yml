@@ -1,0 +1,120 @@
+# Anime Score Comparison Pipeline
+# บริการ: Postgres (metadata Airflow), Postgres (animedb), Airflow (init/webserver/scheduler), Streamlit
+
+x-airflow-common: &airflow-common
+  build: ./airflow
+  image: anime-pipeline-airflow:2.10.5
+  user: "${AIRFLOW_UID:-50000}:0"
+  env_file: .env
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@airflow-db:5432/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__DEFAULT_TIMEZONE: Asia/Bangkok
+    AIRFLOW__WEBSERVER__DEFAULT_UI_TIMEZONE: Asia/Bangkok
+    AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: 30
+    # Airflow Connection "animedb" สร้างจาก environment variable (ไม่ต้องกดสร้างใน UI)
+    AIRFLOW_CONN_ANIMEDB: postgresql://${ANIMEDB_USER}:${ANIMEDB_PASSWORD}@animedb:5432/${ANIMEDB_NAME}
+    BREAK_SOURCE: ${BREAK_SOURCE:-}
+    INJECT_BAD_ROWS: ${INJECT_BAD_ROWS:-}
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - airflow-logs:/opt/airflow/logs
+  depends_on:
+    airflow-db:
+      condition: service_healthy
+    animedb:
+      condition: service_healthy
+
+services:
+  # ฐานข้อมูล metadata ของ Airflow
+  airflow-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${AIRFLOW_DB_USER}
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD}
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AIRFLOW_DB_USER} -d airflow"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ฐานข้อมูลโปรเจกต์ (แยกจาก metadata) - init.sql รันอัตโนมัติครั้งแรก
+  animedb:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${ANIMEDB_USER}
+      POSTGRES_PASSWORD: ${ANIMEDB_PASSWORD}
+      POSTGRES_DB: ${ANIMEDB_NAME}
+    ports:
+      - "${ANIMEDB_HOST_PORT:-5433}:5432"
+    volumes:
+      - animedb-data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ANIMEDB_USER} -d ${ANIMEDB_NAME}"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # สร้าง/อัปเกรดตาราง metadata และผู้ใช้ admin (รันครั้งเดียวแล้วจบ)
+  airflow-init:
+    <<: *airflow-common
+    command: version
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@airflow-db:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USER}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "${AIRFLOW_HOST_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      retries: 5
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  # แดชบอร์ด Streamlit อ่านข้อมูลจาก animedb โดยตรง
+  dashboard:
+    build: ./dashboard
+    environment:
+      DB_HOST: animedb
+      DB_PORT: 5432
+      DB_USER: ${ANIMEDB_USER}
+      DB_PASSWORD: ${ANIMEDB_PASSWORD}
+      DB_NAME: ${ANIMEDB_NAME}
+    ports:
+      - "${DASHBOARD_HOST_PORT:-8501}:8501"
+    volumes:
+      - ./dashboard:/app
+    depends_on:
+      animedb:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  airflow-db-data:
+  animedb-data:
+  airflow-logs:
